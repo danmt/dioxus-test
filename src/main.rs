@@ -79,6 +79,50 @@ fn Home() -> Element {
     }
 }
 
+#[derive(PartialEq, Props, Clone)]
+struct StartTweetVerificationDetailsProps {
+    pub html: String,
+}
+
+fn StartTweetVerificationDetails(props: StartTweetVerificationDetailsProps) -> Element {
+    rsx! {
+        div {
+            dangerous_inner_html: "{props.html}"
+        }
+    }
+}
+
+#[derive(PartialEq, Props, Clone)]
+struct StartTweetVerificationActionsProps {
+    pub status: u8,
+}
+
+fn StartTweetVerificationActions(props: StartTweetVerificationActionsProps) -> Element {
+    rsx! {
+        div {
+            class: "border border-black p-4",
+            match props.status {
+                0 => rsx! {
+                    p { "Not Verified" },
+                    button {
+                        class: "px-2 py-1 bg-slate-500/25 border border-black",
+                        "Start Verification"
+                    },
+                },
+                1 => rsx! {
+                    p { "Verifying" }
+                },
+                2 => rsx! {
+                    p { "Verified" }
+                },
+                _ => rsx! {
+                    "Error"
+                }
+            }
+        }
+    }
+}
+
 #[component]
 fn StartTweetVerification(url: String) -> Element {
     tracing::info!("tweet_url: {}", url);
@@ -95,7 +139,15 @@ fn StartTweetVerification(url: String) -> Element {
         Some(Ok(response)) =>
             rsx! {
                 div {
-                    dangerous_inner_html: "{response.raw_tweet.html}"
+                    class: "flex gap-2",
+
+                    StartTweetVerificationDetails {
+                        html: "{response.raw_tweet.html}"
+                    },
+
+                    StartTweetVerificationActions {
+                        status: response.status
+                    }
                 }
             },
         Some(Err(_)) => rsx! { div { "Loading tweet failed" } },
@@ -114,14 +166,7 @@ pub struct RawTweetData {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TweetData {
     pub raw_tweet: RawTweetData,
-    pub status: TweetStatus, 
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub enum TweetStatus {
-    NotVerified,
-    Verifying,
-    Verified,
+    pub status: u8, 
 }
 
 pub fn get_cwd() -> std::path::PathBuf {
@@ -178,7 +223,7 @@ async fn get_tweet_data(url: String) -> Result<TweetData, ServerFnError> {
     
     let tweet_data = TweetData {
         raw_tweet: raw_tweet_data,
-        status: TweetStatus::NotVerified,
+        status: 0,
     };
 
     // Store tweet locally.
