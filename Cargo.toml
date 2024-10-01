@@ -14,6 +14,7 @@ dioxus = { version = "0.5", features = ["fullstack", "router"] }
 # Debug
 dioxus-logger = "0.5.1"
 manganis = "0.2.2"
+reqwest = { version = "0.12.8", features = ["json"] }
 
 [features]
 default = []
