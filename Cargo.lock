@@ -3299,6 +3299,7 @@ dependencies = [
  "manganis",
  "reqwest 0.12.8",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

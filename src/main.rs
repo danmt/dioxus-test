@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use dioxus_logger::tracing;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 
 // Urls are relative to your Cargo.toml file
 const _TAILWIND_URL: &str = manganis::mg!(file("public/tailwind.css"));
@@ -83,18 +84,65 @@ fn Home() -> Element {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct TweetData {
+pub struct RawTweetData {
     pub html: String,
     pub author_name: String,
     pub author_url: String,
     pub url: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TweetData {
+    pub raw_tweet: RawTweetData,
+    pub status: TweetStatus, 
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum TweetStatus {
+    NotVerified,
+    Verifying,
+    Verified,
+}
+
+pub fn get_cwd() -> std::path::PathBuf {
+    std::env::current_dir().expect("Shoud be able to read cwd")
+}
+
+pub fn write_file(path: &std::path::Path, content: &str) {
+    let mut file = std::fs::File::create(path).expect("Should be able to open file");
+    file.write_all(content.as_bytes())
+        .unwrap_or_else(|_| panic!("Should be able to write file: {path:?}"));
+}
+
 #[server(GetServerData)]
 async fn get_tweet_data(url: String) -> Result<TweetData, ServerFnError> {
-    tracing::info!("URL: {}", url);
+    let cwd = get_cwd();
+    let tweets_dir = cwd.join("tweets");
 
-    // Get the embed URL
+    // Parse the URL to verify it and extract relevant information
+    let parsed_url = Url::parse(&url)?;
+    let url_domain = parsed_url.domain();
+    let url_path_segments = parsed_url.path().split("/");
+
+    // TODO: Verify that the domain is twitter and the path looks like a status path.
+    
+    // Extract Tweet ID
+    let tweet_id = url_path_segments.clone().last().unwrap();
+
+    tracing::info!("tweet id: {:?}", tweet_id);
+
+    // Search for a tweet in the tweets folder. 
+    let tweet_path = tweets_dir.join(format!("{}.json", tweet_id));
+    let tweet_file = std::fs::read_to_string(&tweet_path);
+
+    // If the tweet is found, we return early.
+    if let Ok(tweet_file) = tweet_file {
+        let tweet_file_data: TweetData = serde_json::from_str(&tweet_file)?;
+
+        return Ok(tweet_file_data);
+    }
+
+    // Get the embed URL.
     let embed_url = Url::parse_with_params("https://publish.twitter.com/oembed", &[("url", url)])?;
     tracing::info!("Embed URL: {}", embed_url);
 
@@ -102,11 +150,21 @@ async fn get_tweet_data(url: String) -> Result<TweetData, ServerFnError> {
     let response = reqwest::get(embed_url).await?;
     tracing::info!("Response: {:?}", response);
 
-    // Verify response before parsing
+    // TODO: Verify response before parsing
+    
+    // Parse data as tweet data.
+    let raw_tweet_data = response.json::<RawTweetData>().await?;
+    tracing::info!("Raw tweet data: {:?}", raw_tweet_data);
+    
+    let tweet_data = TweetData {
+        raw_tweet: raw_tweet_data,
+        status: TweetStatus::NotVerified,
+    };
 
-    // Parse data as tweet data
-    let tweet_data = response.json::<TweetData>().await?;
-    tracing::info!("Tweet data: {:?}", tweet_data);
+    // Store tweet locally.
+    let tweet_data_as_string = serde_json::to_string(&tweet_data)?;
+    write_file(&tweet_path, &tweet_data_as_string);
 
+    // Return tweet data with status.
     Ok(tweet_data)
 }
