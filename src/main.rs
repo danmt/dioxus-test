@@ -8,11 +8,14 @@ use std::io::Write;
 
 // Urls are relative to your Cargo.toml file
 const _TAILWIND_URL: &str = manganis::mg!(file("public/tailwind.css"));
+const _STYLES_URL: &str = manganis::mg!(file("public/styles.css"));
 
 #[derive(Clone, Routable, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Route {
     #[route("/")]
     Home {},
+    #[route("/start_tweet_verification/:url")]
+    StartTweetVerification { url: String },
 }
 
 fn main() {
@@ -30,8 +33,8 @@ fn App() -> Element {
 
 #[component]
 fn Home() -> Element {
-    let mut count = use_signal(|| 0);
-    let mut text = use_signal(|| String::from("..."));
+    let mut tweet_url = use_signal(|| String::from(""));
+    let nav = navigator();
 
     rsx! {
         div {
@@ -48,18 +51,10 @@ fn Home() -> Element {
             }
             form {
                 class: "mx-auto my-4 border border-black p-4 w-[400px]",
-                onsubmit: move |e| {
-                    async move {
-                        match e.data.values().get("url") {
-                            Some(url) => {
-                                tracing::info!("URL: {:?}", url.as_value());
-                                if let Ok(tweet_data) = get_tweet_data(url.as_value()).await {
-                                    tracing::info!("Output: {:?}", tweet_data)
-                                }
-                            },
-                            None => tracing::info!("URL not found.")
-                        }
-                    }
+                onsubmit: move |_| {
+                    tracing::info!("current url: {}", tweet_url());
+
+                    nav.replace(Route::StartTweetVerification { url: tweet_url() });
                 },
                 label {
                     "Enter URL to the tweet:"
@@ -71,6 +66,7 @@ fn Home() -> Element {
                         placeholder: "https://x.com/213123",
                         name: "url",
                         r#type: "url",
+                        oninput: move |event| tweet_url.set(event.value())
                     },
                     button {
                         class: "px-2 py-1 bg-slate-500/25 border border-black",
@@ -80,6 +76,30 @@ fn Home() -> Element {
                 },
             }
         }
+    }
+}
+
+#[component]
+fn StartTweetVerification(url: String) -> Element {
+    tracing::info!("tweet_url: {}", url);
+
+    let mut my_tweet = use_resource(move || {
+        let url_copy = url.clone();
+
+        async move {
+            get_tweet_data(url_copy).await
+        }   
+    });
+
+    match &*my_tweet.read_unchecked() {
+        Some(Ok(response)) =>
+            rsx! {
+                div {
+                    dangerous_inner_html: "{response.raw_tweet.html}"
+                }
+            },
+        Some(Err(_)) => rsx! { div { "Loading tweet failed" } },
+        None => rsx! { div { "Loading tweet..." } },
     }
 }
 
